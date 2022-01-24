@@ -1,11 +1,16 @@
+from asyncio.log import logger
 import logging
 
 
-def init_logging():
-    log_fmt = "[%(asctime)s][%(name)s][%(levelname)s]: %(message)s"
-    logging.basicConfig(format=log_fmt)
+def init_logging(verbose: bool = False) -> None:
+    log_fmt = "%(asctime)s|%(name)s|%(levelname)s: %(message)s"
+    if verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format=log_fmt, level=level)
 
-def get_logger(name):
+
+def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
     return logger

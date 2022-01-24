@@ -1,5 +1,5 @@
-from .database import DatabaseHandler
-from .utils import init_logging, get_logger
+from vmaas_oval.database import DatabaseHandler
+from vmaas_oval.utils import init_logging, get_logger
 
 
 class Cache:
@@ -52,13 +52,13 @@ class Cache:
 
         self._load_cache()
 
-    def _load_evr(self):
+    def _load_evr(self) -> None:
         columns = ["id", "epoch", "version", "release"]
         for evr_id, epoch, version, release in self.db_handler.fetch_data("evr", columns):
             self.id_to_evr[evr_id] = (epoch, version, release)
             self.evr_to_id[(epoch, version, release)] = evr_id
 
-    def _load_cache(self):
+    def _load_cache(self) -> None:
         self._load_evr()
 
 
