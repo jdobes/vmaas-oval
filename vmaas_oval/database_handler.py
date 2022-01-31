@@ -309,6 +309,7 @@ class SqliteCursor:
             self.cur.close()
             self.cur = None
 
+
 def initialize_db(db_file_name: str) -> None:
     LOGGER.info("Initializing schema in sqlite DB file: %s", db_file_name)
     with SqliteConnection(db_file_name) as con:
@@ -320,8 +321,10 @@ def initialize_db(db_file_name: str) -> None:
                 for table, sql in DATA.items():
                     LOGGER.debug("Ensuring static data in table exist: %s", table)
                     cur.execute(sql)
+                con.commit()
                 LOGGER.info("DB initialization completed")
             except sqlite3.DatabaseError as e:
+                con.rollback()
                 LOGGER.error("Error occured during initializing DB: \"%s\"", e)
 
 
