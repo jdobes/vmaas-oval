@@ -1,5 +1,5 @@
 from vmaas_oval.database import DatabaseHandler
-from vmaas_oval.utils import init_logging, get_logger
+from vmaas_oval.common.logger import init_logging, get_logger
 
 
 class Cache:

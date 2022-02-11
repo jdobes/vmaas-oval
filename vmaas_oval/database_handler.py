@@ -1,6 +1,6 @@
 import sqlite3
 
-from vmaas_oval.utils import get_logger
+from vmaas_oval.common.logger import get_logger
 
 LOGGER = get_logger(__name__)
 

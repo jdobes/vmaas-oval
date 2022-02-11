@@ -1,5 +1,5 @@
 from vmaas_oval.database_handler import SqliteConnection, SqliteCursor
-from vmaas_oval.utils import get_logger
+from vmaas_oval.common.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
