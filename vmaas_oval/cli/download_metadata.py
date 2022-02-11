@@ -1,15 +1,14 @@
 import argparse
-import json
 import os
 
-from vmaas_oval.common.constants import DEFAULT_METADATA_DIR
+from vmaas_oval.common.constants import DEFAULT_METADATA_DIR, OVAL_FEED_BASE_URL
 from vmaas_oval.common.downloader import download_file
 from vmaas_oval.common.logger import init_logging, get_logger
+from vmaas_oval.parsers.oval_feed import OvalFeed
 
 LOGGER = get_logger(__name__)
 
 REPO_CPE_MAP_URL = "https://access.redhat.com/security/data/metrics/repository-to-cpe.json"
-OVAL_FEED_BASE_URL = "https://access.redhat.com/security/data/oval/v2/"
 
 
 def download_repo_cpe_map(metadata_dir: str):
@@ -22,14 +21,11 @@ def download_oval_files(metadata_dir: str):
     success = download_file(f"{OVAL_FEED_BASE_URL}feed.json", local_feed_path)
     LOGGER.info("Downloaded OVAL feed JSON, success=%s", success)
 
-    with open(local_feed_path, 'r', encoding='utf8') as feed_file:
-        feed = json.load(feed_file)
-    total_files_cnt = len(feed["feed"]["entry"])
-    for idx, entry in enumerate(feed["feed"]["entry"], start=1):
-        local_path = os.path.join(metadata_dir, entry["content"]["src"].replace(OVAL_FEED_BASE_URL, ""))
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)  # Make sure subdirs exist
-        success = download_file(entry["content"]["src"], local_path)
-        LOGGER.info("Downloaded OVAL stream %s [%s/%s], success=%s", entry["id"], idx, total_files_cnt, success)
+    feed = OvalFeed(local_feed_path)
+    for idx, (stream_id, stream_url) in enumerate(feed.streams_url.items(), start=1):
+        os.makedirs(os.path.dirname(feed.streams_local_path[stream_id]), exist_ok=True)  # Make sure subdirs exist
+        success = download_file(stream_url, feed.streams_local_path[stream_id])
+        LOGGER.info("Downloaded OVAL stream %s [%s/%s], success=%s", stream_id, idx, feed.streams_count, success)
 
 
 if __name__ == "__main__":
