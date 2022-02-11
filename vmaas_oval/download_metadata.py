@@ -1,14 +1,12 @@
 import argparse
 import os
 
-from vmaas_oval.common.constants import DEFAULT_METADATA_DIR, OVAL_FEED_BASE_URL
+from vmaas_oval.common.constants import DEFAULT_METADATA_DIR, REPO_CPE_MAP_URL, OVAL_FEED_BASE_URL
 from vmaas_oval.common.downloader import download_file
 from vmaas_oval.common.logger import init_logging, get_logger
 from vmaas_oval.parsers.oval_feed import OvalFeed
 
 LOGGER = get_logger(__name__)
-
-REPO_CPE_MAP_URL = "https://access.redhat.com/security/data/metrics/repository-to-cpe.json"
 
 
 def download_repo_cpe_map(metadata_dir: str):

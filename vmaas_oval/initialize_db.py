@@ -2,9 +2,15 @@ import argparse
 import sys
 
 from vmaas_oval.common.constants import DEFAULT_METADATA_DIR
-from vmaas_oval.database_handler import initialize_schema
-from vmaas_oval.sync import sync_data
+from vmaas_oval.common.logger import get_logger
+from vmaas_oval.database.schema import initialize_schema
 from vmaas_oval.common.logger import init_logging
+
+LOGGER = get_logger(__name__)
+
+
+def sync_data(db_file_name: str) -> None:
+    LOGGER.info("Synchronizing data in sqlite DB file: %s", db_file_name)
 
 
 if __name__ == "__main__":
