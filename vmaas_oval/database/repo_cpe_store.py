@@ -1,4 +1,3 @@
-from platform import release
 import sqlite3
 
 from vmaas_oval.common.logger import get_logger

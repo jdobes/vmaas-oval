@@ -23,7 +23,7 @@ def download_oval_files(metadata_dir: str):
     for idx, (stream_id, stream_url) in enumerate(feed.streams_url.items(), start=1):
         os.makedirs(os.path.dirname(feed.streams_local_path[stream_id]), exist_ok=True)  # Make sure subdirs exist
         success = download_file(stream_url, feed.streams_local_path[stream_id])
-        LOGGER.info("Downloaded OVAL stream %s [%s/%s], success=%s", stream_id, idx, feed.streams_count, success)
+        LOGGER.info("Downloaded OVAL stream: %s [%s/%s], success=%s", stream_id, idx, feed.streams_count, success)
 
 
 if __name__ == "__main__":
