@@ -17,7 +17,8 @@ def fetch_data(db_file_name: str, table_name: str, columns: list) -> list:
     return data
 
 
-def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_columns: list=None, where=None):
+def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_columns: list=None,
+                      where: str=None, one_to_many: bool=False):
     """Create map from table map[columns] -> or(column, tuple(columns))."""
     if not to_columns:
         to_columns = ["id"]
@@ -40,7 +41,10 @@ def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_
                     value = row[-1]
                 else:
                     value = tuple(row[cols_len:])
-                table_map[key] = value
+                if one_to_many:
+                    table_map.setdefault(key, set()).add(value)
+                else:
+                    table_map[key] = value
         except sqlite3.DatabaseError as e:
             LOGGER.error("Error occured during fetching data from DB: \"%s\"", e)
     return table_map
