@@ -58,6 +58,33 @@ TABLES = {
                 name TEXT NOT NULL UNIQUE
         )
         """,
+    "cpe":
+        """
+        CREATE TABLE IF NOT EXISTS cpe (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            name TEXT NOT NULL UNIQUE
+        )
+        """,
+    "content_set":
+        """
+        CREATE TABLE IF NOT EXISTS content_set (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            name TEXT NOT NULL UNIQUE
+        )
+        """,
+    "repo":
+        """
+        CREATE TABLE IF NOT EXISTS repo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            name TEXT NOT NULL,
+            basearch_id INT NULL,
+            releasever TEXT NULL,
+            UNIQUE (name, basearch_id, releasever),
+            CONSTRAINT basearch_id
+                FOREIGN KEY (basearch_id)
+                REFERENCES arch (id)
+        )
+        """,
     "oval_operation_evr":
         """
         CREATE TABLE IF NOT EXISTS oval_operation_evr (
@@ -252,6 +279,15 @@ TABLES = {
 }
 
 DATA = {
+    "arch":
+        """
+        INSERT INTO arch (id, name) VALUES (1, 'noarch'), (2, 'i386'), (3, 'i486'), (4, 'i586'), (5, 'i686'), (6, 'alpha'),
+        (7, 'alphaev6'), (8, 'ia64'), (9, 'sparc'), (10, 'sparcv9'), (11, 'sparc64'), (12, 's390'), (13, 'athlon'), (14, 's390x'),
+        (15, 'ppc'), (16, 'ppc64'), (17, 'ppc64le'), (18, 'pSeries'), (19, 'iSeries'), (20, 'x86_64'), (21, 'ppc64iseries'),
+        (22, 'ppc64pseries'), (23, 'ia32e'), (24, 'amd64'), (25, 'aarch64'), (26, 'armv7hnl'), (27, 'armv7hl'), (28, 'armv7l'),
+        (29, 'armv6hl'), (30, 'armv6l'), (31, 'armv5tel'), (32, 'src')
+        ON CONFLICT (id) DO NOTHING
+        """,
     "oval_operation_evr":
         """
         INSERT INTO oval_operation_evr (id, name) VALUES (1, 'equals'), (2, 'less than')
@@ -281,7 +317,7 @@ DATA = {
 
 
 def initialize_schema(db_file_name: str) -> None:
-    LOGGER.info("Initializing schema in sqlite DB file: %s", db_file_name)
+    LOGGER.info("Initializing schema in DB")
     with SqliteConnection(db_file_name) as con:
         with SqliteCursor(con) as cur:
             try:
@@ -296,14 +332,3 @@ def initialize_schema(db_file_name: str) -> None:
             except sqlite3.DatabaseError as e:
                 con.rollback()
                 LOGGER.error("Error occured during initializing DB: \"%s\"", e)
-
-
-def fetch_data(db_file_name: str, table_name: str, columns: list) -> list:
-    data = []
-    with SqliteConnection(db_file_name) as con:
-        with SqliteCursor(con) as cur:
-            try:
-                data = list(cur.execute(f"SELECT {', '.join(columns)} FROM {table_name}"))
-            except sqlite3.DatabaseError as e:
-                LOGGER.error("Error occured during fetching data from DB: \"%s\"", e)
-    return data

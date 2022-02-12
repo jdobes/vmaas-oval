@@ -1,16 +1,24 @@
 import argparse
+import os
 import sys
 
 from vmaas_oval.common.constants import DEFAULT_METADATA_DIR
-from vmaas_oval.common.logger import get_logger
+from vmaas_oval.common.logger import get_logger, init_logging
+from vmaas_oval.database.handler import SqliteConnection
+from vmaas_oval.database.repo_cpe_store import RepoCpeStore
 from vmaas_oval.database.schema import initialize_schema
-from vmaas_oval.common.logger import init_logging
+from vmaas_oval.parsers.repo_cpe_map import RepoCpeMap
 
 LOGGER = get_logger(__name__)
 
 
-def sync_data(db_file_name: str) -> None:
-    LOGGER.info("Synchronizing data in sqlite DB file: %s", db_file_name)
+def sync_repo_cpe_map(db_file_name: str, metadata_dir: str) -> None:
+    LOGGER.info("Synchronizing Repository to CPE mapping")
+    with SqliteConnection(db_file_name) as con:
+        repo_cpe_store = RepoCpeStore(con)
+        repo_cpe_map = RepoCpeMap(os.path.join(metadata_dir, "repository-to-cpe.json"), repo_cpe_store.arch_map)
+        repo_cpe_store.store(repo_cpe_map)
+    LOGGER.info("Synchronization of Repository to CPE mapping completed")
 
 
 if __name__ == "__main__":
@@ -23,9 +31,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     init_logging(verbose=args.verbose)
+    LOGGER.info("Sqlite DB file: %s", args.file)
     initialize_schema(args.file)
 
     if args.schema_only:
         sys.exit(0)
-    
-    sync_data(args.file)
+
+    sync_repo_cpe_map(args.file, args.metadata_dir)

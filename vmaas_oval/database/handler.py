@@ -2,7 +2,7 @@ import sqlite3
 
 
 class SqliteConnection:
-    def __init__(self, db_file_name):
+    def __init__(self, db_file_name: str):
         self.db_file_name = db_file_name
         self.con = None
 
@@ -18,7 +18,7 @@ class SqliteConnection:
 
 
 class SqliteCursor:
-    def __init__(self, sqlite_connection):
+    def __init__(self, sqlite_connection: SqliteConnection):
         self.con = sqlite_connection
         self.cur = None
 
