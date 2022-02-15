@@ -6,6 +6,7 @@ from vmaas_oval.common.constants import DEFAULT_METADATA_DIR
 from vmaas_oval.common.logger import get_logger, init_logging
 from vmaas_oval.common.unpacker import unpack_file
 from vmaas_oval.database.handler import SqliteConnection
+from vmaas_oval.database.oval_store import OvalStore
 from vmaas_oval.database.repo_cpe_store import RepoCpeStore
 from vmaas_oval.database.schema import initialize_schema
 from vmaas_oval.parsers.oval_feed import OvalFeed
@@ -28,17 +29,20 @@ def sync_oval_streams(db_file_name: str, metadata_dir: str) -> None:
     LOGGER.info("Synchronizing OVAL streams")
     local_feed_path = os.path.join(metadata_dir, "feed.json")
     feed = OvalFeed(local_feed_path)
-    for idx, (stream_id, stream_local_path) in enumerate(feed.streams_local_path.items(), start=1):
-        try:
-            LOGGER.info("Synchronizing OVAL stream: %s [%s/%s]", stream_id, idx, feed.streams_count)
-            unpacked_stream_path = unpack_file(stream_local_path)
-            final_stream_path = unpacked_stream_path if unpacked_stream_path else stream_local_path  # The file might be already unpacked
-            oval_stream = OvalStream(stream_id, None, final_stream_path)
-            oval_stream.load_metadata()
-            oval_stream.unload_metadata()
-        finally:
-            if unpacked_stream_path:
-                os.remove(unpacked_stream_path)  # Delete unpacked file, keep original archive
+    with SqliteConnection(db_file_name) as con:
+        oval_store = OvalStore(con)
+        for idx, (stream_id, stream_local_path) in enumerate(feed.streams_local_path.items(), start=1):
+            try:
+                LOGGER.info("Synchronizing OVAL stream: %s [%s/%s]", stream_id, idx, feed.streams_count)
+                unpacked_stream_path = unpack_file(stream_local_path)
+                final_stream_path = unpacked_stream_path if unpacked_stream_path else stream_local_path  # The file might be already unpacked
+                oval_stream = OvalStream(stream_id, feed.streams_updated[stream_id], final_stream_path)
+                oval_stream.load_metadata()
+                oval_store.store(oval_stream)
+                oval_stream.unload_metadata()
+            finally:
+                if unpacked_stream_path:
+                    os.remove(unpacked_stream_path)  # Delete unpacked file, keep original archive
     LOGGER.info("Synchronization of OVAL streams completed")
 
 

@@ -6,6 +6,13 @@ from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
 LOGGER = get_logger(__name__)
 
 TABLES = {
+    "package_name":
+        """
+        CREATE TABLE IF NOT EXISTS package_name (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            name TEXT NOT NULL UNIQUE
+        )
+        """,
     "evr":
         """
         CREATE TABLE IF NOT EXISTS evr (
@@ -21,34 +28,6 @@ TABLES = {
         CREATE TABLE IF NOT EXISTS arch (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             name TEXT NOT NULL UNIQUE
-        )
-        """,
-    "package_name":
-        """
-        CREATE TABLE IF NOT EXISTS package_name (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            name TEXT NOT NULL UNIQUE
-        )
-        """,
-    "package":
-        """
-        CREATE TABLE IF NOT EXISTS package (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            name_id INT NOT NULL,
-            evr_id INT NOT NULL,
-            arch_id INT NOT NULL,
-            summary TEXT NULL,
-            description TEXT NULL,
-            UNIQUE (name_id, evr_id, arch_id),
-            CONSTRAINT name_id
-                FOREIGN KEY (name_id)
-                REFERENCES package_name (id),
-            CONSTRAINT evr_id
-                FOREIGN KEY (evr_id)
-                REFERENCES evr (id),
-            CONSTRAINT arch_id
-                FOREIGN KEY (arch_id)
-                REFERENCES arch (id)
         )
         """,
     "cve":
@@ -148,9 +127,9 @@ TABLES = {
             name TEXT NOT NULL UNIQUE
         )
         """,
-    "oval_file":
+    "oval_stream":
         """
-        CREATE TABLE IF NOT EXISTS oval_file (
+        CREATE TABLE IF NOT EXISTS oval_stream (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             oval_id TEXT UNIQUE NOT NULL,
             updated TIMESTAMP WITH TIME ZONE NOT NULL
