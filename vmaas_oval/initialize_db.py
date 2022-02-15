@@ -25,7 +25,7 @@ def sync_repo_cpe_map(db_file_name: str, metadata_dir: str) -> None:
     LOGGER.info("Synchronization of Repository to CPE mapping completed")
 
 
-def sync_oval_streams(db_file_name: str, metadata_dir: str) -> None:
+def sync_oval_streams(db_file_name: str, metadata_dir: str, force: bool = False) -> None:
     LOGGER.info("Synchronizing OVAL streams")
     local_feed_path = os.path.join(metadata_dir, "feed.json")
     feed = OvalFeed(local_feed_path)
@@ -38,7 +38,7 @@ def sync_oval_streams(db_file_name: str, metadata_dir: str) -> None:
                 final_stream_path = unpacked_stream_path if unpacked_stream_path else stream_local_path  # The file might be already unpacked
                 oval_stream = OvalStream(stream_id, feed.streams_updated[stream_id], final_stream_path)
                 oval_stream.load_metadata()
-                oval_store.store(oval_stream)
+                oval_store.store(oval_stream, force=force)
                 oval_stream.unload_metadata()
             finally:
                 if unpacked_stream_path:
@@ -52,6 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--database", default="database.sqlite", help="sqlite DB file path")
     parser.add_argument("-m", "--metadata-dir", default=DEFAULT_METADATA_DIR, help="dir containing downloaded metadata")
     parser.add_argument("-s", "--schema-only", action="store_true", help="initialize only empty schema and finish")
+    parser.add_argument("-f", "--force", action="store_true", help="sync OVAL streams even though they are not newer")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
     args = parser.parse_args()
 
@@ -63,4 +64,4 @@ if __name__ == "__main__":
         sys.exit(0)
 
     sync_repo_cpe_map(args.database, args.metadata_dir)
-    sync_oval_streams(args.database, args.metadata_dir)
+    sync_oval_streams(args.database, args.metadata_dir, force=args.force)

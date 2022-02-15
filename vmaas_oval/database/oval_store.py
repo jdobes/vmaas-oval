@@ -16,7 +16,7 @@ class OvalStore:
         self.con = con
         self.arch_map = prepare_table_map(self.con, "arch", ["name"])
 
-    def _save_oval_stream_updated(self, oval_id: str, updated: datetime) -> Optional[int]:
+    def _save_oval_stream_updated(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
             try:
                 cur.execute("SELECT id, updated FROM oval_stream WHERE oval_id = ?", (oval_id,))
@@ -27,7 +27,7 @@ class OvalStore:
                     cur.execute("SELECT id, updated FROM oval_stream WHERE oval_id = ?", (oval_id,))
                     row = cur.fetchone()
                     row_id = row[0]
-                elif updated > parse_datetime_sqlite(row[1]):  # Updated stream
+                elif updated > parse_datetime_sqlite(row[1]) or force:  # Updated stream
                     row_id = row[0]
                     cur.execute("UPDATE oval_stream SET updated = ? WHERE oval_id = ?", (updated, oval_id))
                     self.con.commit()
@@ -39,8 +39,8 @@ class OvalStore:
                     row_id = None
         return row_id
 
-    def store(self, oval_stream: OvalStream):
-        oval_stream_id = self._save_oval_stream_updated(oval_stream.oval_id, oval_stream.updated)
+    def store(self, oval_stream: OvalStream, force: bool = False):
+        oval_stream_id = self._save_oval_stream_updated(oval_stream.oval_id, oval_stream.updated, force=force)
         if oval_stream_id:
             pass
         else:
