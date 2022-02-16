@@ -1,4 +1,5 @@
 import sqlite3
+from typing import Optional
 
 from vmaas_oval.common.logger import get_logger
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
@@ -17,8 +18,8 @@ def fetch_data(db_file_name: str, table_name: str, columns: list) -> list:
     return data
 
 
-def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_columns: list=None,
-                      where: str=None, one_to_many: bool=False):
+def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_columns: list = None,
+                      where: str = None, one_to_many: bool = False):
     """Create map from table map[columns] -> or(column, tuple(columns))."""
     if not to_columns:
         to_columns = ["id"]
@@ -48,3 +49,37 @@ def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_
         except sqlite3.DatabaseError as e:
             LOGGER.error("Error occured during fetching data from DB: \"%s\"", e)
     return table_map
+
+
+def populate_table(con: SqliteConnection, table_name: str, columns: list, data: set, update_cache_map: Optional[dict] = None):
+    cols_len = len(columns)
+    if update_cache_map is not None:
+        current_data = update_cache_map  # no need to re-select if cache map is provided
+    else:
+        current_data = prepare_table_map(con, table_name, columns)
+    if cols_len == 1:
+        to_insert = [item for item in data if item[0] not in current_data]  # key is not tuple, rows are
+    else:
+        to_insert = [item for item in data if item not in current_data]
+
+    LOGGER.debug("Inserting %s items to %s", len(to_insert), table_name)
+    if to_insert:
+        with SqliteCursor(con) as cur:
+            try:
+                cur.executemany("INSERT INTO %s (%s) VALUES (%s)" % (table_name,
+                                                                     ", ".join(columns),
+                                                                     ", ".join(["?" for _ in columns])),
+                                to_insert)
+                con.commit()
+                if update_cache_map is not None:
+                    cur.execute("SELECT %s, id FROM %s" % (", ".join(columns), table_name))
+                    for row in cur.fetchall():
+                        if cols_len == 1:
+                            key = row[0]
+                        else:
+                            key = tuple(row[:cols_len])
+                        if key not in update_cache_map:
+                            update_cache_map[key] = row[-1]
+            except sqlite3.DatabaseError as e:
+                con.rollback()
+                LOGGER.error("Error occured during inserting to %s: \"%s\"", table_name, e)
