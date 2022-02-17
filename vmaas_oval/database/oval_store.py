@@ -4,6 +4,7 @@ from typing import Optional
 
 from vmaas_oval.common.dateutils import parse_datetime_sqlite
 from vmaas_oval.common.logger import get_logger
+from vmaas_oval.common.rpm import parse_evr
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
 from vmaas_oval.database.utils import prepare_table_map, populate_table
 from vmaas_oval.parsers.oval_stream import OvalStream
@@ -16,6 +17,7 @@ class OvalStore:
         self.con = con
         self.arch_map = prepare_table_map(self.con, "arch", ["name"])
         self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
+        self.evr_map = prepare_table_map(self.con, "package_name", ["epoch", "version", "release"])
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -43,9 +45,14 @@ class OvalStore:
     def _populate_objects(self, oval_file_id, objects):
         populate_table(self.con, "package_name", ["name"], {(obj["name"],) for obj in objects}, update_cache_map=self.package_name_map)
 
+    def _populate_states(self, oval_file_id, states):
+        populate_table(self.con, "evr", ["epoch", "version", "release"], {parse_evr(state["evr"]) for state in states if state["evr"]},
+                       update_cache_map=self.evr_map)
+
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)
         if oval_stream_id:
             self._populate_objects(oval_stream_id, oval_stream.objects)
+            self._populate_states(oval_stream_id, oval_stream.states)
         else:
             LOGGER.debug("OVAL stream is unchanged, skipping store")
