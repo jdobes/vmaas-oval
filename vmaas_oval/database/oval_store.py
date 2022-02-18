@@ -17,7 +17,8 @@ class OvalStore:
         self.con = con
         self.arch_map = prepare_table_map(self.con, "arch", ["name"])
         self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
-        self.evr_map = prepare_table_map(self.con, "package_name", ["epoch", "version", "release"])
+        self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
+        self.cve_map = prepare_table_map(self.con, "cve", ["name"])
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -42,17 +43,23 @@ class OvalStore:
                     row_id = None
         return row_id
     
-    def _populate_objects(self, oval_file_id, objects):
-        populate_table(self.con, "package_name", ["name"], {(obj["name"],) for obj in objects}, update_cache_map=self.package_name_map)
+    def _populate_objects(self, oval_stream_id: int, objects: list):
+        populate_table(self.con, "package_name", ["name"], {(obj["name"],) for obj in objects},
+                       update_cache_map=self.package_name_map)
 
-    def _populate_states(self, oval_file_id, states):
+    def _populate_states(self, oval_stream_id: int, states: list):
         populate_table(self.con, "evr", ["epoch", "version", "release"], {parse_evr(state["evr"]) for state in states if state["evr"]},
                        update_cache_map=self.evr_map)
+
+    def _populate_definitions(self, oval_stream_id: int, definitions: list):
+        populate_table(self.con, "cve", ["name"], {(cve,) for definition in definitions for cve in definition["cves"]},
+                       update_cache_map=self.cve_map)
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)
         if oval_stream_id:
             self._populate_objects(oval_stream_id, oval_stream.objects)
             self._populate_states(oval_stream_id, oval_stream.states)
+            self._populate_definitions(oval_stream_id, oval_stream.definitions)
         else:
             LOGGER.debug("OVAL stream is unchanged, skipping store")
