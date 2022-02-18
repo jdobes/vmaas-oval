@@ -45,15 +45,15 @@ class OvalStore:
     
     def _populate_objects(self, oval_stream_id: int, objects: list):
         populate_table(self.con, "package_name", ["name"], {(obj["name"],) for obj in objects},
-                       update_cache_map=self.package_name_map)
+                       current_data=self.package_name_map, update_current_data=True)
 
     def _populate_states(self, oval_stream_id: int, states: list):
         populate_table(self.con, "evr", ["epoch", "version", "release"], {parse_evr(state["evr"]) for state in states if state["evr"]},
-                       update_cache_map=self.evr_map)
+                       current_data=self.evr_map, update_current_data=True)
 
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         populate_table(self.con, "cve", ["name"], {(cve,) for definition in definitions for cve in definition["cves"]},
-                       update_cache_map=self.cve_map)
+                       current_data=self.cve_map, update_current_data=True)
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)

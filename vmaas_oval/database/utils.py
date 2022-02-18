@@ -51,11 +51,10 @@ def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_
     return table_map
 
 
-def populate_table(con: SqliteConnection, table_name: str, columns: list, data: set, update_cache_map: Optional[dict] = None):
+def populate_table(con: SqliteConnection, table_name: str, columns: list, data: set, current_data: Optional[dict] = None,
+                   update_current_data: bool = False):
     cols_len = len(columns)
-    if update_cache_map is not None:
-        current_data = update_cache_map  # no need to re-select if cache map is provided
-    else:
+    if current_data is None:
         current_data = prepare_table_map(con, table_name, columns)
     if cols_len == 1:
         to_insert = [item for item in data if item[0] not in current_data]  # key is not tuple, rows are
@@ -71,15 +70,15 @@ def populate_table(con: SqliteConnection, table_name: str, columns: list, data: 
                                                                      ", ".join(["?" for _ in columns])),
                                 to_insert)
                 con.commit()
-                if update_cache_map is not None:
+                if update_current_data:
                     cur.execute("SELECT %s, id FROM %s" % (", ".join(columns), table_name))
                     for row in cur.fetchall():
                         if cols_len == 1:
                             key = row[0]
                         else:
                             key = tuple(row[:cols_len])
-                        if key not in update_cache_map:
-                            update_cache_map[key] = row[-1]
+                        if key not in current_data:
+                            current_data[key] = row[-1]
             except sqlite3.DatabaseError as e:
                 con.rollback()
                 LOGGER.error("Error occured during inserting to %s: \"%s\"", table_name, e)
