@@ -139,9 +139,14 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS oval_rpminfo_object (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            oval_id TEXT UNIQUE NOT NULL,
+            stream_id INT NOT NULL,
+            oval_id TEXT NOT NULL,
             package_name_id INT NOT NULL,
             version INT NOT NULL,
+            UNIQUE (stream_id, oval_id)
+            CONSTRAINT stream_id
+                FOREIGN KEY (stream_id)
+                REFERENCES oval_stream (id),
             CONSTRAINT package_name_id
                 FOREIGN KEY (package_name_id)
                 REFERENCES package_name (id)
@@ -151,10 +156,15 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS oval_rpminfo_state (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            oval_id TEXT UNIQUE NOT NULL,
+            stream_id INT NOT NULL,
+            oval_id TEXT NOT NULL,
             evr_id INT,
             evr_operation_id INT,
             version INT NOT NULL,
+            UNIQUE (stream_id, oval_id)
+            CONSTRAINT stream_id
+                FOREIGN KEY (stream_id)
+                REFERENCES oval_stream (id),
             CONSTRAINT evr_id
                 FOREIGN KEY (evr_id)
                 REFERENCES evr (id),
@@ -181,11 +191,16 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS oval_rpminfo_test (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            oval_id TEXT UNIQUE NOT NULL,
+            stream_id INT NOT NULL,
+            oval_id TEXT NOT NULL,
             rpminfo_object_id INT NOT NULL,
             check_id INT NOT NULL,
             check_existence_id INT NOT NULL,
             version INT NOT NULL,
+            UNIQUE (stream_id, oval_id)
+            CONSTRAINT stream_id
+                FOREIGN KEY (stream_id)
+                REFERENCES oval_stream (id),
             CONSTRAINT rpminfo_object_id
                 FOREIGN KEY (rpminfo_object_id)
                 REFERENCES oval_rpminfo_object (id),
@@ -195,6 +210,20 @@ TABLES = {
             CONSTRAINT check_existence_id
                 FOREIGN KEY (check_existence_id)
                 REFERENCES oval_check_existence_rpminfo (id)
+        )
+        """,
+    "oval_module_test":
+        """
+        CREATE TABLE IF NOT EXISTS oval_module_test (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            stream_id INT NOT NULL,
+            oval_id TEXT NOT NULL,
+            module_stream TEXT NOT NULL,
+            version INT NOT NULL,
+            UNIQUE (stream_id, oval_id)
+            CONSTRAINT stream_id
+                FOREIGN KEY (stream_id)
+                REFERENCES oval_stream (id)
         )
         """,
     "oval_rpminfo_test_state":
@@ -243,10 +272,15 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS oval_definition (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            oval_id TEXT UNIQUE NOT NULL,
+            stream_id INT NOT NULL,
+            oval_id TEXT NOT NULL,
             definition_type_id INT NOT NULL,
             criteria_id INT,
             version INT NOT NULL,
+            UNIQUE (stream_id, oval_id)
+            CONSTRAINT stream_id
+                FOREIGN KEY (stream_id)
+                REFERENCES oval_stream (id),
             CONSTRAINT definition_type_id
                 FOREIGN KEY (definition_type_id)
                 REFERENCES oval_definition_type (id),
