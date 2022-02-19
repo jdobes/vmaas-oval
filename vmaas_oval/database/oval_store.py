@@ -6,7 +6,7 @@ from vmaas_oval.common.dateutils import parse_datetime_sqlite
 from vmaas_oval.common.logger import get_logger
 from vmaas_oval.common.rpm import parse_evr
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
-from vmaas_oval.database.utils import prepare_table_map, populate_table
+from vmaas_oval.database.utils import prepare_table_map, insert_table
 from vmaas_oval.parsers.oval_stream import OvalStream
 
 LOGGER = get_logger(__name__)
@@ -15,10 +15,14 @@ LOGGER = get_logger(__name__)
 class OvalStore:
     def __init__(self, con: SqliteConnection):
         self.con = con
+        # Persistent caches
         self.arch_map = prepare_table_map(self.con, "arch", ["name"])
         self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
         self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
         self.cve_map = prepare_table_map(self.con, "cve", ["name"])
+
+        # Caches for single stream
+        self.oval_rpminfo_object_map = {}
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -44,16 +48,48 @@ class OvalStore:
         return row_id
     
     def _populate_objects(self, oval_stream_id: int, objects: list):
-        populate_table(self.con, "package_name", ["name"], {(obj["name"],) for obj in objects},
-                       current_data=self.package_name_map, update_current_data=True)
+        # Insert new package names
+        to_insert_package_name = set()
+        for obj in objects:
+            if obj["name"] not in self.package_name_map:
+                to_insert_package_name.add((obj["name"],))
+        if to_insert_package_name:
+            insert_table(self.con, "package_name", ["name"], to_insert_package_name)
+            self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
+
+        # Insert OVAL rpminfo objects
+        self.oval_rpminfo_object_map = prepare_table_map(self.con, "oval_rpminfo_object", ["stream_id", "oval_id"],
+                                                         to_columns=["id", "package_name_id", "version"],
+                                                         where=f"stream_id = {oval_stream_id}")
+        to_insert_oval_rpminfo_object = set()
+        for obj in objects:
+            if (oval_stream_id, obj["id"]) not in self.oval_rpminfo_object_map:
+                to_insert_oval_rpminfo_object.add((oval_stream_id, obj["id"], self.package_name_map[obj["name"]], obj["version"]))
+        if to_insert_oval_rpminfo_object:
+            insert_table(self.con, "oval_rpminfo_object", ["stream_id", "oval_id", "package_name_id", "version"], to_insert_oval_rpminfo_object)
+            self.oval_rpminfo_object_map = prepare_table_map(self.con, "oval_rpminfo_object", ["stream_id", "oval_id"],
+                                                             to_columns=["id", "package_name_id", "version"],
+                                                             where=f"stream_id = {oval_stream_id}")
+
 
     def _populate_states(self, oval_stream_id: int, states: list):
-        populate_table(self.con, "evr", ["epoch", "version", "release"], {parse_evr(state["evr"]) for state in states if state["evr"]},
-                       current_data=self.evr_map, update_current_data=True)
+        # Insert new EVRs
+        to_insert_evr = set()
+        for state in states:
+            if state["evr"]:
+                evr = parse_evr(state["evr"])
+                if evr not in self.evr_map:
+                    to_insert_evr.add(evr)
+        if to_insert_evr:
+            insert_table(self.con, "evr", ["epoch", "version", "release"], to_insert_evr)
+            self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
 
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
-        populate_table(self.con, "cve", ["name"], {(cve,) for definition in definitions for cve in definition["cves"]},
-                       current_data=self.cve_map, update_current_data=True)
+        # Insert new CVEs
+        to_insert = {(cve,) for definition in definitions for cve in definition["cves"] if cve not in self.cve_map}
+        if to_insert:
+            insert_table(self.con, "cve", ["name"], to_insert)
+            self.cve_map = prepare_table_map(self.con, "cve", ["name"])
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)

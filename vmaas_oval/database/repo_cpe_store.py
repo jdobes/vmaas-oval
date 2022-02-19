@@ -2,7 +2,7 @@ import sqlite3
 
 from vmaas_oval.common.logger import get_logger
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
-from vmaas_oval.database.utils import prepare_table_map, populate_table
+from vmaas_oval.database.utils import prepare_table_map, insert_table
 from vmaas_oval.parsers.repo_cpe_map import RepoCpeMap
 
 LOGGER = get_logger(__name__)
@@ -14,14 +14,20 @@ class RepoCpeStore:
         self.arch_map = prepare_table_map(self.con, "arch", ["name"])
 
     def _populate_cpes(self, cpes: set):
-        populate_table(self.con, "cpe", ["name"], {(cpe,) for cpe in cpes})
+        current_data = prepare_table_map(self.con, "cpe", ["name"])
+        insert_table(self.con, "cpe", ["name"], [(cpe,) for cpe in cpes if cpe not in current_data])
 
     def _populate_content_sets(self, content_sets: set):
-        populate_table(self.con, "content_set", ["name"], {(content_set,) for content_set in content_sets})
+        current_data = prepare_table_map(self.con, "content_set", ["name"])
+        insert_table(self.con, "content_set", ["name"],
+                     [(content_set,) for content_set in content_sets if content_set not in current_data])
 
     def _populate_repos(self, repos: set):
-        populate_table(self.con, "repo", ["name", "basearch_id", "releasever"],
-                       {(content_set_label, self.arch_map.get(basearch), releasever) for content_set_label, basearch, releasever in repos})
+        current_data = prepare_table_map(self.con, "repo", ["name", "basearch_id", "releasever"])
+        insert_table(self.con, "repo", ["name", "basearch_id", "releasever"],
+                     [(content_set_label, self.arch_map.get(basearch), releasever)
+                      for content_set_label, basearch, releasever in repos
+                      if (content_set_label, self.arch_map.get(basearch), releasever) not in current_data])
 
     def _populate_content_set_to_cpes(self, content_set_to_cpes: dict):
         cpe_map = prepare_table_map(self.con, "cpe", ["name"])
