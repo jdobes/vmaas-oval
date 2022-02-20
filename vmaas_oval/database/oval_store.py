@@ -11,6 +11,9 @@ from vmaas_oval.parsers.oval_stream import OvalStream
 
 LOGGER = get_logger(__name__)
 
+# Not in DB table like other operations because we don't need this information further
+SUPPORTED_ARCH_OPERATIONS = ["equals", "pattern match"]
+
 
 class OvalStore:
     def __init__(self, con: SqliteConnection):
@@ -20,9 +23,11 @@ class OvalStore:
         self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
         self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
         self.cve_map = prepare_table_map(self.con, "cve", ["name"])
+        self.oval_operation_evr_map = prepare_table_map(self.con, "oval_operation_evr", ["name"])
 
         # Caches for single stream
         self.oval_rpminfo_object_map = {}
+        self.oval_rpminfo_state_map = {}
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -54,10 +59,10 @@ class OvalStore:
             if obj["name"] not in self.package_name_map:
                 to_insert_package_name.add((obj["name"],))
         insert_table(self.con, "package_name", ["name"], to_insert_package_name)
-        if to_insert_package_name:
+        if to_insert_package_name:  # Refresh cache
             self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
 
-        # Insert OVAL rpminfo objects
+        # Insert/update/delete OVAL rpminfo objects
         oval_rpminfo_object_map = prepare_table_map(self.con, "oval_rpminfo_object", ["stream_id", "oval_id"],
                                                     to_columns=["id", "package_name_id", "version"],
                                                     where=f"stream_id = {oval_stream_id}")
@@ -82,22 +87,50 @@ class OvalStore:
                                                          where=f"stream_id = {oval_stream_id}")
 
     def _populate_states(self, oval_stream_id: int, states: list):
+        parsed_evrs = {}
         # Insert new EVRs
         to_insert_evr = set()
         for state in states:
             if state["evr"]:
                 evr = parse_evr(state["evr"])
+                parsed_evrs[state["evr"]] = evr  # Save, to not need to parse second time below
                 if evr not in self.evr_map:
                     to_insert_evr.add(evr)
-        if to_insert_evr:
-            insert_table(self.con, "evr", ["epoch", "version", "release"], to_insert_evr)
+        insert_table(self.con, "evr", ["epoch", "version", "release"], to_insert_evr)
+        if to_insert_evr:  # Refresh cache
             self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
+
+        # Insert/update/delete OVAL rpminfo states
+        oval_rpminfo_state_map = prepare_table_map(self.con, "oval_rpminfo_state", ["stream_id", "oval_id"],
+                                                   to_columns=["id", "evr_id", "evr_operation_id", "version"],
+                                                   where=f"stream_id = {oval_stream_id}")
+        to_insert_oval_rpminfo_state = set()
+        to_update_oval_rpminfo_state = set()
+        for state in states:
+            evr_id = self.evr_map[parsed_evrs[state["evr"]]] if state["evr"] else None
+            evr_operation_id = self.oval_operation_evr_map[state["evr_operation"]] if state["evr_operation"] else None
+            if (oval_stream_id, state["id"]) not in oval_rpminfo_state_map:
+                to_insert_oval_rpminfo_state.add((oval_stream_id, state["id"], evr_id, evr_operation_id, state["version"]))
+            elif state["version"] > oval_rpminfo_state_map[(oval_stream_id, state["id"])][3]:  # Version increased -> update
+                to_update_oval_rpminfo_state.add((evr_id, evr_operation_id, state["version"], oval_stream_id, state["id"]))
+            oval_rpminfo_state_map.pop((oval_stream_id, state["id"]), None)  # Pop out visited items
+        
+        to_delete_oval_rpminfo_state = set(oval_rpminfo_state_map)  # Delete items in DB which are not in current data
+
+        insert_table(self.con, "oval_rpminfo_state", ["stream_id", "oval_id", "evr_id", "evr_operation_id", "version"], to_insert_oval_rpminfo_state)
+        update_table(self.con, "oval_rpminfo_state", ["evr_id", "evr_operation_id", "version"], ["stream_id", "oval_id"], to_update_oval_rpminfo_state)
+        delete_table(self.con, "oval_rpminfo_state", ["stream_id", "oval_id"], to_delete_oval_rpminfo_state)
+
+        # Refresh cache for future lookups
+        self.oval_rpminfo_state_map = prepare_table_map(self.con, "oval_rpminfo_state", ["stream_id", "oval_id"],
+                                                        to_columns=["id", "evr_id", "evr_operation_id", "version"],
+                                                        where=f"stream_id = {oval_stream_id}")
 
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         # Insert new CVEs
         to_insert = {(cve,) for definition in definitions for cve in definition["cves"] if cve not in self.cve_map}
-        if to_insert:
-            insert_table(self.con, "cve", ["name"], to_insert)
+        insert_table(self.con, "cve", ["name"], to_insert)
+        if to_insert:  # Refresh cache
             self.cve_map = prepare_table_map(self.con, "cve", ["name"])
 
     def store(self, oval_stream: OvalStream, force: bool = False):
