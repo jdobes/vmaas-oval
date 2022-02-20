@@ -64,3 +64,18 @@ def insert_table(con: SqliteConnection, table_name: str, columns: list, to_inser
             except sqlite3.DatabaseError as e:
                 con.rollback()
                 LOGGER.error("Error occured during inserting to %s: \"%s\"", table_name, e)
+
+
+def update_table(con: SqliteConnection, table_name: str, to_update_columns: list, where_columns: list, to_update: set):
+    LOGGER.debug("Updating %s items in %s", len(to_update), table_name)
+    if to_update:
+        with SqliteCursor(con) as cur:
+            try:
+                cur.executemany("UPDATE %s SET %s WHERE %s" % (table_name,
+                                                               ", ".join([f"{col} = ?" for col in to_update_columns]),
+                                                               " AND ".join([f"{col} = ?" for col in where_columns])),
+                                to_update)
+                con.commit()
+            except sqlite3.DatabaseError as e:
+                con.rollback()
+                LOGGER.error("Error occured during updating %s: \"%s\"", table_name, e)

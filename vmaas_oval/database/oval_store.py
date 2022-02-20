@@ -6,7 +6,7 @@ from vmaas_oval.common.dateutils import parse_datetime_sqlite
 from vmaas_oval.common.logger import get_logger
 from vmaas_oval.common.rpm import parse_evr
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
-from vmaas_oval.database.utils import prepare_table_map, insert_table
+from vmaas_oval.database.utils import prepare_table_map, insert_table, update_table
 from vmaas_oval.parsers.oval_stream import OvalStream
 
 LOGGER = get_logger(__name__)
@@ -62,11 +62,17 @@ class OvalStore:
                                                          to_columns=["id", "package_name_id", "version"],
                                                          where=f"stream_id = {oval_stream_id}")
         to_insert_oval_rpminfo_object = set()
+        to_update_oval_rpminfo_object = set()
         for obj in objects:
             if (oval_stream_id, obj["id"]) not in self.oval_rpminfo_object_map:
                 to_insert_oval_rpminfo_object.add((oval_stream_id, obj["id"], self.package_name_map[obj["name"]], obj["version"]))
-        if to_insert_oval_rpminfo_object:
-            insert_table(self.con, "oval_rpminfo_object", ["stream_id", "oval_id", "package_name_id", "version"], to_insert_oval_rpminfo_object)
+            elif obj["version"] > self.oval_rpminfo_object_map[(oval_stream_id, obj["id"])][2]:  # Version increased -> update
+                to_update_oval_rpminfo_object.add((self.package_name_map[obj["name"]], obj["version"], oval_stream_id, obj["id"]))
+
+        insert_table(self.con, "oval_rpminfo_object", ["stream_id", "oval_id", "package_name_id", "version"], to_insert_oval_rpminfo_object)
+        update_table(self.con, "oval_rpminfo_object", ["package_name_id", "version"], ["stream_id", "oval_id"], to_update_oval_rpminfo_object)
+
+        if to_insert_oval_rpminfo_object or to_update_oval_rpminfo_object:
             self.oval_rpminfo_object_map = prepare_table_map(self.con, "oval_rpminfo_object", ["stream_id", "oval_id"],
                                                              to_columns=["id", "package_name_id", "version"],
                                                              where=f"stream_id = {oval_stream_id}")
