@@ -181,7 +181,8 @@ TABLES = {
             UNIQUE (rpminfo_state_id, arch_id),
             CONSTRAINT rpminfo_state_id
                 FOREIGN KEY (rpminfo_state_id)
-                REFERENCES oval_rpminfo_state (id),
+                REFERENCES oval_rpminfo_state (id)
+                ON DELETE CASCADE,
             CONSTRAINT arch_id
                 FOREIGN KEY (arch_id)
                 REFERENCES arch (id)
@@ -203,7 +204,8 @@ TABLES = {
                 REFERENCES oval_stream (id),
             CONSTRAINT rpminfo_object_id
                 FOREIGN KEY (rpminfo_object_id)
-                REFERENCES oval_rpminfo_object (id),
+                REFERENCES oval_rpminfo_object (id)
+                ON DELETE CASCADE,
             CONSTRAINT check_id
                 FOREIGN KEY (check_id)
                 REFERENCES oval_check_rpminfo (id),
@@ -234,10 +236,12 @@ TABLES = {
             UNIQUE (rpminfo_test_id, rpminfo_state_id),
             CONSTRAINT rpminfo_test_id
                 FOREIGN KEY (rpminfo_test_id)
-                REFERENCES oval_rpminfo_test (id),
+                REFERENCES oval_rpminfo_test (id)
+                ON DELETE CASCADE,
             CONSTRAINT rpminfo_state_id
                 FOREIGN KEY (rpminfo_state_id)
                 REFERENCES oval_rpminfo_state (id)
+                ON DELETE CASCADE
         )
         """,
     "oval_criteria":
@@ -257,6 +261,7 @@ TABLES = {
             parent_criteria_id INT NOT NULL,
             dep_criteria_id INT,
             dep_test_id INT,
+            dep_module_test_id INT,
             CONSTRAINT parent_criteria_id
                 FOREIGN KEY (parent_criteria_id)
                 REFERENCES oval_criteria (id),
@@ -266,6 +271,11 @@ TABLES = {
             CONSTRAINT dep_test_id
                 FOREIGN KEY (dep_test_id)
                 REFERENCES oval_rpminfo_test (id)
+                ON DELETE CASCADE
+            CONSTRAINT dep_module_test_id
+                FOREIGN KEY (dep_module_test_id)
+                REFERENCES oval_module_test (id)
+                ON DELETE CASCADE
         )
         """,
     "oval_definition":
@@ -297,10 +307,12 @@ TABLES = {
             UNIQUE (definition_id, rpminfo_test_id),
             CONSTRAINT definition_id
                 FOREIGN KEY (definition_id)
-                REFERENCES oval_definition (id),
+                REFERENCES oval_definition (id)
+                ON DELETE CASCADE,
             CONSTRAINT rpminfo_test_id
                 FOREIGN KEY (rpminfo_test_id)
                 REFERENCES oval_rpminfo_test (id)
+                ON DELETE CASCADE
         )
         """,
     "oval_definition_cve":
@@ -311,10 +323,26 @@ TABLES = {
             UNIQUE (definition_id, cve_id),
             CONSTRAINT definition_id
                 FOREIGN KEY (definition_id)
-                REFERENCES oval_definition (id),
+                REFERENCES oval_definition (id)
+                ON DELETE CASCADE,
             CONSTRAINT cve_id
                 FOREIGN KEY (cve_id)
                 REFERENCES cve (id)
+        )
+        """,
+    "oval_definition_cpe":
+        """
+        CREATE TABLE IF NOT EXISTS oval_definition_cpe (
+            definition_id INT NOT NULL,
+            cpe_id INT NOT NULL,
+            UNIQUE (definition_id, cpe_id),
+            CONSTRAINT definition_id
+                FOREIGN KEY (definition_id)
+                REFERENCES oval_definition (id)
+                ON DELETE CASCADE,
+            CONSTRAINT cpe_id
+                FOREIGN KEY (cpe_id)
+                REFERENCES cpe (id)
         )
         """
 }
