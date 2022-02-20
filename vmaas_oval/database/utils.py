@@ -79,3 +79,16 @@ def update_table(con: SqliteConnection, table_name: str, to_update_columns: list
             except sqlite3.DatabaseError as e:
                 con.rollback()
                 LOGGER.error("Error occured during updating %s: \"%s\"", table_name, e)
+
+def delete_table(con: SqliteConnection, table_name: str, where_columns: list, to_delete: set):
+    LOGGER.debug("Deleting %s items from %s", len(to_delete), table_name)
+    if to_delete:
+        with SqliteCursor(con) as cur:
+            try:
+                cur.executemany("DELETE FROM %s WHERE %s" % (table_name,
+                                                             " AND ".join([f"{col} = ?" for col in where_columns])),
+                                to_delete)
+                con.commit()
+            except sqlite3.DatabaseError as e:
+                con.rollback()
+                LOGGER.error("Error occured during deleting from %s: \"%s\"", table_name, e)
