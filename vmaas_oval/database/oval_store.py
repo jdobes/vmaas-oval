@@ -249,48 +249,46 @@ class OvalStore:
         with SqliteCursor(self.con) as cur:
             try:
                 cur.execute("UPDATE oval_definition SET criteria_id = ? WHERE id = ?", (criteria_id, definition_id))
-                self.con.commit()
             except sqlite3.DatabaseError as e:
                 self.con.rollback()
                 LOGGER.error("Error occured during setting definition criteria tree: \"%s\"", e)
 
-    def _populate_definition_criteria(self, oval_stream_id: int, definition_id: int, criteria: dict) -> int:
-        criteria_id = None
-        operator_id = self.oval_criteria_operator_map[criteria["operator"]]
-
-        with SqliteCursor(self.con) as cur:
-            try:
-                criteria_id = cur.execute("INSERT INTO oval_criteria (definition_id, operator_id) VALUES (?, ?)",
-                                          (definition_id, operator_id)).lastrowid
-            except sqlite3.DatabaseError as e:
-                self.con.rollback()
-                LOGGER.error("Error occured during populating definition criteria: \"%s\"", e)
-        
-        dependencies_to_import = []
-        for test in criteria["criterions"]:
-            test_id = self.oval_rpminfo_test_map.get((oval_stream_id, test))
-            module_test_id = self.oval_module_test_map.get((oval_stream_id, test))
-            if test_id:  # Unsuported test type may not be imported (rpmverifyfile etc.)
-                dependencies_to_import.append((criteria_id, None, test_id[0], None))
-            if module_test_id:
-                dependencies_to_import.append((criteria_id, None, None, module_test_id[0]))
-
-        for child_criteria in criteria["criteria"]:
-            child_criteria_id = self._populate_definition_criteria(oval_stream_id, definition_id, child_criteria)  # Recursion
-            dependencies_to_import.append((criteria_id, child_criteria_id, None, None))
-
-        # Import dependencies
-        if dependencies_to_import:
+    def _populate_definition_criteria(self, oval_stream_id: int, definition_id: int, criteria: dict, dependencies_to_import: list) -> int:
+        parent_criteria_id = None
+        top_criteria_id = None
+        crit = criteria
+        criteria_stack = []
+        while crit is not None:
+            criteria_id = None
+            operator_id = self.oval_criteria_operator_map[crit["operator"]]
             with SqliteCursor(self.con) as cur:
                 try:
-                    cur.executemany("""INSERT INTO oval_criteria_dependency
-                                       (parent_criteria_id, dep_criteria_id, dep_test_id, dep_module_test_id)
-                                       VALUES (?, ?, ?, ?)""", dependencies_to_import)
+                    criteria_id = cur.execute("INSERT INTO oval_criteria (definition_id, operator_id) VALUES (?, ?)",
+                                            (definition_id, operator_id)).lastrowid
                 except sqlite3.DatabaseError as e:
                     self.con.rollback()
-                    LOGGER.error("Error occured during populating definition criteria tree: \"%s\"", e)
+                    LOGGER.error("Error occured during inserting to oval_criteria: \"%s\"", e)
 
-        return criteria_id
+            if parent_criteria_id:
+                dependencies_to_import.append((parent_criteria_id, criteria_id, None, None))
+            else:
+                top_criteria_id = criteria_id
+            for test in crit["criterions"]:
+                test_id = self.oval_rpminfo_test_map.get((oval_stream_id, test))
+                module_test_id = self.oval_module_test_map.get((oval_stream_id, test))
+                if test_id:  # Unsuported test type may not be imported (rpmverifyfile etc.)
+                    dependencies_to_import.append((criteria_id, None, test_id[0], None))
+                if module_test_id:
+                    dependencies_to_import.append((criteria_id, None, None, module_test_id[0]))
+
+            criteria_stack.extend(crit["criteria"])
+            if criteria_stack:
+                crit = criteria_stack.pop()
+                parent_criteria_id = criteria_id
+            else:
+                crit = None
+
+        return top_criteria_id
 
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         # Insert new CVEs
@@ -333,10 +331,14 @@ class OvalStore:
                                                      where=f"stream_id = {oval_stream_id}")
 
         # Build criteria trees and assign to definitions
+        dependencies_to_import = []
         for oval_id, criteria in to_create_criteria_tree:
             definition_id = self.oval_definition_map[(oval_stream_id, oval_id)][0]
-            criteria_id = self._populate_definition_criteria(oval_stream_id, definition_id, criteria)
+            criteria_id = self._populate_definition_criteria(oval_stream_id, definition_id, criteria, dependencies_to_import)
             self._set_definition_criteria_tree(definition_id, criteria_id)
+        # Import criteria dependencies
+        insert_table(self.con, "oval_criteria_dependency", ["parent_criteria_id", "dep_criteria_id", "dep_test_id", "dep_module_test_id"],
+                     dependencies_to_import)
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)
