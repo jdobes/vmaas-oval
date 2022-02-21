@@ -23,17 +23,24 @@ class OvalStore:
         self.package_name_map = prepare_table_map(self.con, "package_name", ["name"])
         self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
         self.cve_map = prepare_table_map(self.con, "cve", ["name"])
+        self.cpe_map = prepare_table_map(self.con, "cpe", ["name"])
         self.oval_operation_evr_map = prepare_table_map(self.con, "oval_operation_evr", ["name"])
         self.oval_check_rpminfo_map = prepare_table_map(self.con, "oval_check_rpminfo", ["name"])
         self.oval_check_existence_rpminfo_map = prepare_table_map(self.con, "oval_check_existence_rpminfo", ["name"])
         self.oval_definition_type_map = prepare_table_map(self.con, "oval_definition_type", ["name"])
         self.oval_criteria_operator_map = prepare_table_map(self.con, "oval_criteria_operator", ["name"])
         
-        # Caches for all streams (items are continuosly deleted)
+        # Caches for all streams, used to identify items to delete (items from these dicts are continuosly deleted)
         self.oval_rpminfo_state_arch_map = prepare_table_map(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id"],
                                                              to_columns=["arch_id"], one_to_many=True)
         self.oval_rpminfo_test_state_map = prepare_table_map(self.con, "oval_rpminfo_test_state", ["rpminfo_test_id"],
                                                              to_columns=["rpminfo_state_id"], one_to_many=True)
+        self.oval_definition_test_map = prepare_table_map(self.con, "oval_definition_test", ["definition_id"],
+                                                          to_columns=["rpminfo_test_id"], one_to_many=True)
+        self.oval_definition_cve_map = prepare_table_map(self.con, "oval_definition_cve", ["definition_id"],
+                                                         to_columns=["cve_id"], one_to_many=True)
+        self.oval_definition_cpe_map = prepare_table_map(self.con, "oval_definition_cpe", ["definition_id"],
+                                                         to_columns=["cpe_id"], one_to_many=True)
 
         # Caches for single stream
         self.oval_rpminfo_object_map = {}
@@ -306,7 +313,7 @@ class OvalStore:
         to_create_criteria_tree = []
         for definition in definitions:
             definition_type_id = self.oval_definition_type_map.get(definition["type"])
-            if definition_type_id is None:  # miscellaneous
+            if definition_type_id is None:  # miscellaneous, skip
                 continue
             if (oval_stream_id, definition["id"]) not in oval_definition_map:
                 to_insert_oval_definition.add((oval_stream_id, definition["id"], definition_type_id, None, definition["version"]))
@@ -339,6 +346,60 @@ class OvalStore:
         # Import criteria dependencies
         insert_table(self.con, "oval_criteria_dependency", ["parent_criteria_id", "dep_criteria_id", "dep_test_id", "dep_module_test_id"],
                      dependencies_to_import)
+
+        # Insert/delete definition tests, CVEs, CPEs
+        to_insert_oval_definition_test = set()
+        to_delete_oval_definition_test = set()
+        to_insert_oval_definition_cve = set()
+        to_delete_oval_definition_cve = set()
+        to_insert_oval_definition_cpe = set()
+        to_delete_oval_definition_cpe = set()
+        for definition in definitions:
+            definition_id = self.oval_definition_map.get((oval_stream_id, definition["id"]))
+            if definition_id is None:  # Not inserted previously, probably unsupported type (miscellaneous)
+                continue
+            definition_id = definition_id[0]
+            for test in definition["tests"]:
+                test_id = self.oval_rpminfo_test_map.get((oval_stream_id, test))
+                if test_id is None:  # Not inserted previously, probably unsupported type
+                    continue
+                test_id = test_id[0]
+                if test_id not in self.oval_definition_test_map.get(definition_id, []):
+                    to_insert_oval_definition_test.add((definition_id, test_id))
+                else:
+                    self.oval_definition_test_map[definition_id].remove(test_id)
+
+            for test_id in self.oval_definition_test_map.get(definition_id, []):
+                to_delete_oval_definition_test.add((definition_id, test_id))
+
+            for cve in definition["cves"]:
+                cve_id = self.cve_map[cve]
+                if cve_id not in self.oval_definition_cve_map.get(definition_id, []):
+                    to_insert_oval_definition_cve.add((definition_id, cve_id))
+                else:
+                    self.oval_definition_cve_map[definition_id].remove(cve_id)
+
+            for cve_id in self.oval_definition_cve_map.get(definition_id, []):
+                to_delete_oval_definition_cve.add((definition_id, cve_id))
+
+            for cpe in definition["cpes"]:
+                cpe_id = self.cpe_map.get(cpe)
+                if cpe_id is None:  # Some CPEs are substrings which are not mapped by Repo-CPE map, unclear how to handle this
+                    continue
+                if cpe_id not in self.oval_definition_cpe_map.get(definition_id, []):
+                    to_insert_oval_definition_cpe.add((definition_id, cpe_id))
+                else:
+                    self.oval_definition_cpe_map[definition_id].remove(cpe_id)
+                
+            for cpe_id in self.oval_definition_cpe_map.get(definition_id, []):
+                to_delete_oval_definition_cpe.add((definition_id, cpe_id))
+
+        insert_table(self.con, "oval_definition_test", ["definition_id", "rpminfo_test_id"], to_insert_oval_definition_test)
+        delete_table(self.con, "oval_definition_test", ["definition_id", "rpminfo_test_id"], to_delete_oval_definition_test)
+        insert_table(self.con, "oval_definition_cve", ["definition_id", "cve_id"], to_insert_oval_definition_cve)
+        delete_table(self.con, "oval_definition_cve", ["definition_id", "cve_id"], to_delete_oval_definition_cve)
+        insert_table(self.con, "oval_definition_cpe", ["definition_id", "cpe_id"], to_insert_oval_definition_cpe)
+        delete_table(self.con, "oval_definition_cpe", ["definition_id", "cpe_id"], to_delete_oval_definition_cpe)
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)

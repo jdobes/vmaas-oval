@@ -114,11 +114,11 @@ class OvalStream:
                 criteria = self._parse_criteria(definition.find("default:criteria", NS))  # <criteria> 0..1
 
                 # Parse tests
-                tests = []
+                tests = set()
                 crit = criteria
                 criteria_stack = []
                 while crit is not None:
-                    tests.extend(crit["criterions"])
+                    tests.update(crit["criterions"])
                     criteria_stack.extend(crit["criteria"])
                     if criteria_stack:
                         crit = criteria_stack.pop()
@@ -131,7 +131,7 @@ class OvalStream:
                                          "advisories": advisories,
                                          "cpes": cpes,
                                          "criteria": criteria,
-                                         "tests": tests,
+                                         "tests": list(tests),
                                          "version": int(definition.get("version"))})
             else:  # Other unparsed tags
                 LOGGER.warning("Unknown definition: %s", definition.tag)
