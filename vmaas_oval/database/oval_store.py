@@ -25,6 +25,10 @@ class OvalStore:
         self.cve_map = prepare_table_map(self.con, "cve", ["name"])
         self.oval_operation_evr_map = prepare_table_map(self.con, "oval_operation_evr", ["name"])
 
+        # Caches for all streams (items are continuosly deleted)
+        self.oval_rpminfo_state_arch_map = prepare_table_map(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id"],
+                                                             to_columns=["arch_id"], one_to_many=True)
+
         # Caches for single stream
         self.oval_rpminfo_object_map = {}
         self.oval_rpminfo_state_map = {}
@@ -125,6 +129,29 @@ class OvalStore:
         self.oval_rpminfo_state_map = prepare_table_map(self.con, "oval_rpminfo_state", ["stream_id", "oval_id"],
                                                         to_columns=["id", "evr_id", "evr_operation_id", "version"],
                                                         where=f"stream_id = {oval_stream_id}")
+
+        # Insert/delete state architectures
+        to_insert_oval_rpminfo_state_arch = set()
+        to_delete_oval_rpminfo_state_arch = set()
+        for state in states:
+            if state["arch_operation"] is not None and state["arch_operation"] not in SUPPORTED_ARCH_OPERATIONS:
+                LOGGER.warning("Unsupported arch operation: %s", state["arch_operation"])
+                continue
+            if state["arch"] is not None:
+                state_id = self.oval_rpminfo_state_map[(oval_stream_id, state["id"])][0]
+                # Simplified logic, can contain any regex but RH oval files contains only logical OR
+                arch_ids = {self.arch_map[arch] for arch in state["arch"].split("|")}
+                for arch_id in arch_ids:
+                    if arch_id not in self.oval_rpminfo_state_arch_map.get(state_id, []):
+                        to_insert_oval_rpminfo_state_arch.add((state_id, arch_id))
+                    else:
+                        self.oval_rpminfo_state_arch_map[state_id].remove(arch_id)
+                
+                for arch_id in self.oval_rpminfo_state_arch_map.get(state_id, []):
+                    to_delete_oval_rpminfo_state_arch.add((state_id, arch_id))
+
+        insert_table(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id", "arch_id"], to_insert_oval_rpminfo_state_arch)
+        delete_table(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id", "arch_id"], to_delete_oval_rpminfo_state_arch)
 
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         # Insert new CVEs
