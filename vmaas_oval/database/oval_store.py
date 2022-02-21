@@ -26,7 +26,9 @@ class OvalStore:
         self.oval_operation_evr_map = prepare_table_map(self.con, "oval_operation_evr", ["name"])
         self.oval_check_rpminfo_map = prepare_table_map(self.con, "oval_check_rpminfo", ["name"])
         self.oval_check_existence_rpminfo_map = prepare_table_map(self.con, "oval_check_existence_rpminfo", ["name"])
-
+        self.oval_definition_type_map = prepare_table_map(self.con, "oval_definition_type", ["name"])
+        self.oval_criteria_operator_map = prepare_table_map(self.con, "oval_criteria_operator", ["name"])
+        
         # Caches for all streams (items are continuosly deleted)
         self.oval_rpminfo_state_arch_map = prepare_table_map(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id"],
                                                              to_columns=["arch_id"], one_to_many=True)
@@ -38,6 +40,7 @@ class OvalStore:
         self.oval_rpminfo_state_map = {}
         self.oval_rpminfo_test_map = {}
         self.oval_module_test_map = {}
+        self.oval_definition_map = {}
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -61,7 +64,7 @@ class OvalStore:
                     LOGGER.error("Error occured during storing OVAL stream: \"%s\"", e)
                     row_id = None
         return row_id
-    
+
     def _populate_objects(self, oval_stream_id: int, objects: list):
         # Insert new package names
         to_insert_package_name = set()
@@ -232,12 +235,108 @@ class OvalStore:
                                                       to_columns=["id", "module_stream", "version"],
                                                       where=f"stream_id = {oval_stream_id}")
 
+    def _delete_definition_criteria_tree(self, definition_id: int):
+        with SqliteCursor(self.con) as cur:
+            try:
+                cur.execute("UPDATE oval_definition SET criteria_id = NULL WHERE id = ?", (definition_id,))
+                cur.execute("DELETE FROM oval_criteria where definition_id = ?", (definition_id,))
+                self.con.commit()
+            except sqlite3.DatabaseError as e:
+                self.con.rollback()
+                LOGGER.error("Error occured during deleting definition criteria tree: \"%s\"", e)
+
+    def _set_definition_criteria_tree(self, definition_id: int, criteria_id: int):
+        with SqliteCursor(self.con) as cur:
+            try:
+                cur.execute("UPDATE oval_definition SET criteria_id = ? WHERE id = ?", (criteria_id, definition_id))
+                self.con.commit()
+            except sqlite3.DatabaseError as e:
+                self.con.rollback()
+                LOGGER.error("Error occured during setting definition criteria tree: \"%s\"", e)
+
+    def _populate_definition_criteria(self, oval_stream_id: int, definition_id: int, criteria: dict) -> int:
+        criteria_id = None
+        operator_id = self.oval_criteria_operator_map[criteria["operator"]]
+
+        with SqliteCursor(self.con) as cur:
+            try:
+                criteria_id = cur.execute("INSERT INTO oval_criteria (definition_id, operator_id) VALUES (?, ?)",
+                                          (definition_id, operator_id)).lastrowid
+            except sqlite3.DatabaseError as e:
+                self.con.rollback()
+                LOGGER.error("Error occured during populating definition criteria: \"%s\"", e)
+        
+        dependencies_to_import = []
+        for test in criteria["criterions"]:
+            test_id = self.oval_rpminfo_test_map.get((oval_stream_id, test))
+            module_test_id = self.oval_module_test_map.get((oval_stream_id, test))
+            if test_id:  # Unsuported test type may not be imported (rpmverifyfile etc.)
+                dependencies_to_import.append((criteria_id, None, test_id[0], None))
+            if module_test_id:
+                dependencies_to_import.append((criteria_id, None, None, module_test_id[0]))
+
+        for child_criteria in criteria["criteria"]:
+            child_criteria_id = self._populate_definition_criteria(oval_stream_id, definition_id, child_criteria)  # Recursion
+            dependencies_to_import.append((criteria_id, child_criteria_id, None, None))
+
+        # Import dependencies
+        if dependencies_to_import:
+            with SqliteCursor(self.con) as cur:
+                try:
+                    cur.executemany("""INSERT INTO oval_criteria_dependency
+                                       (parent_criteria_id, dep_criteria_id, dep_test_id, dep_module_test_id)
+                                       VALUES (?, ?, ?, ?)""", dependencies_to_import)
+                except sqlite3.DatabaseError as e:
+                    self.con.rollback()
+                    LOGGER.error("Error occured during populating definition criteria tree: \"%s\"", e)
+
+        return criteria_id
+
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         # Insert new CVEs
         to_insert = {(cve,) for definition in definitions for cve in definition["cves"] if cve not in self.cve_map}
         insert_table(self.con, "cve", ["name"], to_insert)
         if to_insert:  # Refresh cache
             self.cve_map = prepare_table_map(self.con, "cve", ["name"])
+
+        # Insert/update/delete OVAL definitions
+        oval_definition_map = prepare_table_map(self.con, "oval_definition", ["stream_id", "oval_id"],
+                                                to_columns=["id", "definition_type_id", "criteria_id", "version"],
+                                                where=f"stream_id = {oval_stream_id}")
+        to_insert_oval_definition = set()
+        to_update_oval_definition = set()
+        to_create_criteria_tree = []
+        for definition in definitions:
+            definition_type_id = self.oval_definition_type_map.get(definition["type"])
+            if definition_type_id is None:  # miscellaneous
+                continue
+            if (oval_stream_id, definition["id"]) not in oval_definition_map:
+                to_insert_oval_definition.add((oval_stream_id, definition["id"], definition_type_id, None, definition["version"]))
+                to_create_criteria_tree.append((definition["id"], definition["criteria"]))
+            elif definition["version"] > oval_definition_map[(oval_stream_id, definition["id"])][3]:  # Version increased -> update
+                to_update_oval_definition.add((definition_type_id, None, definition["version"], oval_stream_id, definition["id"]))
+                self._delete_definition_criteria_tree(oval_definition_map[(oval_stream_id, definition["id"])][0])  # Delete to re-build the tree
+                to_create_criteria_tree.append((definition["id"]))
+            oval_definition_map.pop((oval_stream_id, definition["id"]), None)  # Pop out visited items
+        
+        to_delete_oval_definition = set(oval_definition_map)  # Delete items in DB which are not in current data
+
+        insert_table(self.con, "oval_definition", ["stream_id", "oval_id", "definition_type_id", "criteria_id", "version"],
+                     to_insert_oval_definition)
+        update_table(self.con, "oval_definition", ["definition_type_id", "criteria_id", "version"], ["stream_id", "oval_id"],
+                     to_update_oval_definition)
+        delete_table(self.con, "oval_definition", ["stream_id", "oval_id"], to_delete_oval_definition)
+
+        # Refresh cache for future lookups
+        self.oval_definition_map = prepare_table_map(self.con, "oval_definition", ["stream_id", "oval_id"],
+                                                     to_columns=["id", "definition_type_id", "criteria_id", "version"],
+                                                     where=f"stream_id = {oval_stream_id}")
+
+        # Build criteria trees and assign to definitions
+        for oval_id, criteria in to_create_criteria_tree:
+            definition_id = self.oval_definition_map[(oval_stream_id, oval_id)][0]
+            criteria_id = self._populate_definition_criteria(oval_stream_id, definition_id, criteria)
+            self._set_definition_criteria_tree(definition_id, criteria_id)
 
     def store(self, oval_stream: OvalStream, force: bool = False):
         oval_stream_id = self._get_oval_stream_id(oval_stream.oval_id, oval_stream.updated, force=force)

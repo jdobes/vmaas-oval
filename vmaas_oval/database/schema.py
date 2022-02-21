@@ -248,7 +248,12 @@ TABLES = {
         """
         CREATE TABLE IF NOT EXISTS oval_criteria (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            definition_id INT NOT NULL,
             operator_id INT NOT NULL,
+            CONSTRAINT definition_id
+                FOREIGN KEY (definition_id)
+                REFERENCES oval_definition (id)
+                ON DELETE CASCADE,
             CONSTRAINT operator_id
                 FOREIGN KEY (operator_id)
                 REFERENCES oval_criteria_operator (id)
@@ -264,10 +269,12 @@ TABLES = {
             dep_module_test_id INT,
             CONSTRAINT parent_criteria_id
                 FOREIGN KEY (parent_criteria_id)
-                REFERENCES oval_criteria (id),
+                REFERENCES oval_criteria (id)
+                ON DELETE CASCADE,
             CONSTRAINT dep_criteria_id
                 FOREIGN KEY (dep_criteria_id)
-                REFERENCES oval_criteria (id),
+                REFERENCES oval_criteria (id)
+                ON DELETE CASCADE,
             CONSTRAINT dep_test_id
                 FOREIGN KEY (dep_test_id)
                 REFERENCES oval_rpminfo_test (id)
