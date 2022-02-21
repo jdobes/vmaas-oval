@@ -1,11 +1,12 @@
-from vmaas_oval.database import DatabaseHandler
-from vmaas_oval.common.logger import init_logging, get_logger
+from vmaas_oval.database.handler import SqliteConnection
+from vmaas_oval.common.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 
 class Cache:
-    def __init__(self, db_handler: DatabaseHandler):
-        self.logger = get_logger(self.__class__.__name__)
-        self.db_handler = db_handler
+    def __init__(self, con: SqliteConnection):
+        self.con = con
 
         self.id_to_evr = {}
         self.evr_to_id = {}
@@ -54,17 +55,6 @@ class Cache:
 
     def _load_evr(self) -> None:
         columns = ["id", "epoch", "version", "release"]
-        for evr_id, epoch, version, release in self.db_handler.fetch_data("evr", columns):
-            self.id_to_evr[evr_id] = (epoch, version, release)
-            self.evr_to_id[(epoch, version, release)] = evr_id
 
     def _load_cache(self) -> None:
         self._load_evr()
-
-
-if __name__ == "__main__":
-    init_logging()
-    db_handler = DatabaseHandler()
-    cache = Cache(db_handler)
-    print(cache.id_to_evr)
-    print(cache.evr_to_id)
