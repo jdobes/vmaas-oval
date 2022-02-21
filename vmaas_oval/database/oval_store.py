@@ -24,14 +24,20 @@ class OvalStore:
         self.evr_map = prepare_table_map(self.con, "evr", ["epoch", "version", "release"])
         self.cve_map = prepare_table_map(self.con, "cve", ["name"])
         self.oval_operation_evr_map = prepare_table_map(self.con, "oval_operation_evr", ["name"])
+        self.oval_check_rpminfo_map = prepare_table_map(self.con, "oval_check_rpminfo", ["name"])
+        self.oval_check_existence_rpminfo_map = prepare_table_map(self.con, "oval_check_existence_rpminfo", ["name"])
 
         # Caches for all streams (items are continuosly deleted)
         self.oval_rpminfo_state_arch_map = prepare_table_map(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id"],
                                                              to_columns=["arch_id"], one_to_many=True)
+        self.oval_rpminfo_test_state_map = prepare_table_map(self.con, "oval_rpminfo_test_state", ["rpminfo_test_id"],
+                                                             to_columns=["rpminfo_state_id"], one_to_many=True)
 
         # Caches for single stream
         self.oval_rpminfo_object_map = {}
         self.oval_rpminfo_state_map = {}
+        self.oval_rpminfo_test_map = {}
+        self.oval_module_test_map = {}
 
     def _get_oval_stream_id(self, oval_id: str, updated: datetime, force: bool = False) -> Optional[int]:
         with SqliteCursor(self.con) as cur:
@@ -153,6 +159,79 @@ class OvalStore:
         insert_table(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id", "arch_id"], to_insert_oval_rpminfo_state_arch)
         delete_table(self.con, "oval_rpminfo_state_arch", ["rpminfo_state_id", "arch_id"], to_delete_oval_rpminfo_state_arch)
 
+    def _populate_tests(self, oval_stream_id: int, tests: list):
+        # Insert/update/delete OVAL rpminfo tests
+        oval_rpminfo_test_map = prepare_table_map(self.con, "oval_rpminfo_test", ["stream_id", "oval_id"],
+                                                  to_columns=["id", "rpminfo_object_id", "check_id", "check_existence_id", "version"],
+                                                  where=f"stream_id = {oval_stream_id}")
+        to_insert_oval_rpminfo_test = set()
+        to_update_oval_rpminfo_test = set()
+        for test in tests:
+            rpminfo_object_id = self.oval_rpminfo_object_map[(oval_stream_id, test["object"])][0]
+            check_id = self.oval_check_rpminfo_map[test["check"]]
+            check_existence_id = self.oval_check_existence_rpminfo_map[test["check_existence"]]
+            if (oval_stream_id, test["id"]) not in oval_rpminfo_test_map:
+                to_insert_oval_rpminfo_test.add((oval_stream_id, test["id"], rpminfo_object_id, check_id, check_existence_id, test["version"]))
+            elif test["version"] > oval_rpminfo_test_map[(oval_stream_id, test["id"])][4]:  # Version increased -> update
+                to_update_oval_rpminfo_test.add((rpminfo_object_id, check_id, check_existence_id, test["version"], oval_stream_id, test["id"]))
+            oval_rpminfo_test_map.pop((oval_stream_id, test["id"]), None)  # Pop out visited items
+        
+        to_delete_oval_rpminfo_test = set(oval_rpminfo_test_map)  # Delete items in DB which are not in current data
+
+        insert_table(self.con, "oval_rpminfo_test", ["stream_id", "oval_id", "rpminfo_object_id", "check_id", "check_existence_id", "version"],
+                     to_insert_oval_rpminfo_test)
+        update_table(self.con, "oval_rpminfo_test", ["rpminfo_object_id", "check_id", "check_existence_id", "version"], ["stream_id", "oval_id"],
+                     to_update_oval_rpminfo_test)
+        delete_table(self.con, "oval_rpminfo_test", ["stream_id", "oval_id"], to_delete_oval_rpminfo_test)
+
+        # Refresh cache for future lookups
+        self.oval_rpminfo_test_map = prepare_table_map(self.con, "oval_rpminfo_test", ["stream_id", "oval_id"],
+                                                       to_columns=["id", "rpminfo_object_id", "check_id", "check_existence_id", "version"],
+                                                       where=f"stream_id = {oval_stream_id}")
+
+        # Insert/delete test states
+        to_insert_oval_rpminfo_test_state = set()
+        to_delete_oval_rpminfo_test_state = set()
+        for test in tests:
+            test_id = self.oval_rpminfo_test_map[(oval_stream_id, test["id"])][0]
+            for state in test["states"]:
+                state_id = self.oval_rpminfo_state_map[(oval_stream_id, state)][0]
+                if state_id not in self.oval_rpminfo_test_state_map.get(test_id, []):
+                    to_insert_oval_rpminfo_test_state.add((test_id, state_id))
+                else:
+                    self.oval_rpminfo_test_state_map[test_id].remove(state_id)
+                
+            for state_id in self.oval_rpminfo_test_state_map.get(test_id, []):
+                to_delete_oval_rpminfo_test_state.add((test_id, state_id))
+
+        insert_table(self.con, "oval_rpminfo_test_state", ["rpminfo_test_id", "rpminfo_state_id"], to_insert_oval_rpminfo_test_state)
+        delete_table(self.con, "oval_rpminfo_test_state", ["rpminfo_test_id", "rpminfo_state_id"], to_delete_oval_rpminfo_test_state)
+
+    def _populate_module_tests(self, oval_stream_id: int, module_tests: list):
+        # Insert/update/delete OVAL module tests
+        oval_module_test_map = prepare_table_map(self.con, "oval_module_test", ["stream_id", "oval_id"],
+                                                 to_columns=["id", "module_stream", "version"],
+                                                 where=f"stream_id = {oval_stream_id}")
+        to_insert_oval_module_test = set()
+        to_update_oval_module_test = set()
+        for module_test in module_tests:
+            if (oval_stream_id, module_test["id"]) not in oval_module_test_map:
+                to_insert_oval_module_test.add((oval_stream_id, module_test["id"], module_test["module_stream"], module_test["version"]))
+            elif module_test["version"] > oval_module_test_map[(oval_stream_id, module_test["id"])][2]:  # Version increased -> update
+                to_update_oval_module_test.add((module_test["module_stream"], module_test["version"], oval_stream_id, module_test["id"]))
+            oval_module_test_map.pop((oval_stream_id, module_test["id"]), None)  # Pop out visited items
+        
+        to_delete_oval_module_test = set(oval_module_test_map)  # Delete items in DB which are not in current data
+
+        insert_table(self.con, "oval_module_test", ["stream_id", "oval_id", "module_stream", "version"], to_insert_oval_module_test)
+        update_table(self.con, "oval_module_test", ["module_stream", "version"], ["stream_id", "oval_id"], to_update_oval_module_test)
+        delete_table(self.con, "oval_module_test", ["stream_id", "oval_id"], to_delete_oval_module_test)
+
+        # Refresh cache for future lookups
+        self.oval_module_test_map = prepare_table_map(self.con, "oval_module_test", ["stream_id", "oval_id"],
+                                                      to_columns=["id", "module_stream", "version"],
+                                                      where=f"stream_id = {oval_stream_id}")
+
     def _populate_definitions(self, oval_stream_id: int, definitions: list):
         # Insert new CVEs
         to_insert = {(cve,) for definition in definitions for cve in definition["cves"] if cve not in self.cve_map}
@@ -165,6 +244,8 @@ class OvalStore:
         if oval_stream_id:
             self._populate_objects(oval_stream_id, oval_stream.objects)
             self._populate_states(oval_stream_id, oval_stream.states)
+            self._populate_tests(oval_stream_id, oval_stream.tests)
+            self._populate_module_tests(oval_stream_id, oval_stream.module_tests)
             self._populate_definitions(oval_stream_id, oval_stream.definitions)
         else:
             LOGGER.debug("OVAL stream is unchanged, skipping store")
