@@ -21,14 +21,14 @@ class VulnerabilitiesEvaluator:
     def __init__(self, cache: Cache):
         self.cache = cache
 
-    def _process_input_packages(self, packages_to_process: list) -> dict:
-        filtered_packages_to_process = {}
+    def _process_input_packages(self, packages_to_process: list) -> list:
+        filtered_packages_to_process = set()
         if packages_to_process is not None:
             for pkg in packages_to_process:
                 name, epoch, ver, rel, arch = parse_rpm_name(pkg)
                 if name in self.cache.packagename2id:
-                    filtered_packages_to_process[pkg] = (name, epoch, ver, rel, arch)
-        return filtered_packages_to_process
+                    filtered_packages_to_process.add((name, epoch, ver, rel, arch))
+        return list(filtered_packages_to_process)
 
     def _evaluate_state(self, state: tuple, epoch: int, ver: str, rel: str, arch: str):
         oval_state_id, evr_id, oval_operation_evr = state
@@ -174,8 +174,7 @@ class VulnerabilitiesEvaluator:
                                                            data.get('basearch'),
                                                            data.get('releasever'))
 
-        for package, parsed_package in packages_to_process.items():
-            name, epoch, ver, rel, arch = parsed_package
+        for name, epoch, ver, rel, arch in packages_to_process:
             package_name_id = self.cache.packagename2id[name]
             definition_ids = candidate_definitions.intersection(
                 self.cache.packagename_id2definition_ids.get(package_name_id, []))
