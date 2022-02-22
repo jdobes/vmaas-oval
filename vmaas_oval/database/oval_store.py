@@ -261,7 +261,6 @@ class OvalStore:
                 LOGGER.error("Error occured during setting definition criteria tree: \"%s\"", e)
 
     def _populate_definition_criteria(self, oval_stream_id: int, definition_id: int, criteria: dict, dependencies_to_import: list) -> int:
-        parent_criteria_id = None
         top_criteria_id = None
         crit = criteria
         criteria_stack = []
@@ -276,8 +275,8 @@ class OvalStore:
                     self.con.rollback()
                     LOGGER.error("Error occured during inserting to oval_criteria: \"%s\"", e)
 
-            if parent_criteria_id:
-                dependencies_to_import.append((parent_criteria_id, criteria_id, None, None))
+            if crit.get("parent_criteria_id") is not None:
+                dependencies_to_import.append((crit["parent_criteria_id"], criteria_id, None, None))
             else:
                 top_criteria_id = criteria_id
             for test in crit["criterions"]:
@@ -288,10 +287,12 @@ class OvalStore:
                 if module_test_id:
                     dependencies_to_import.append((criteria_id, None, None, module_test_id[0]))
 
-            criteria_stack.extend(crit["criteria"])
+            for child_crit in crit["criteria"]:
+                child_crit["parent_criteria_id"] = criteria_id
+                criteria_stack.append(child_crit)
+
             if criteria_stack:
                 crit = criteria_stack.pop()
-                parent_criteria_id = criteria_id
             else:
                 crit = None
 
