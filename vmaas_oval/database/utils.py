@@ -1,21 +1,9 @@
 import sqlite3
-from typing import Optional
 
 from vmaas_oval.common.logger import get_logger
 from vmaas_oval.database.handler import SqliteConnection, SqliteCursor
 
 LOGGER = get_logger(__name__)
-
-
-def fetch_data(db_file_name: str, table_name: str, columns: list) -> list:
-    data = []
-    with SqliteConnection(db_file_name) as con:
-        with SqliteCursor(con) as cur:
-            try:
-                data = list(cur.execute(f"SELECT {', '.join(columns)} FROM {table_name}"))
-            except sqlite3.DatabaseError as e:
-                LOGGER.error("Error occured during fetching data from DB: \"%s\"", e)
-    return data
 
 
 def prepare_table_map(con: SqliteConnection, table_name: str, columns: list, to_columns: list = None,
