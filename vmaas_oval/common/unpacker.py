@@ -1,5 +1,4 @@
 import bz2
-import gzip
 from typing import Callable
 
 from vmaas_oval.common.logger import get_logger
@@ -10,8 +9,6 @@ DEFAULT_CHUNK_SIZE = 1048576
 
 
 def _get_unpack_func(file_path: str) -> Callable:
-    if file_path.endswith(".gz"):
-        return gzip.open
     if file_path.endswith(".bz2"):
         return bz2.open
     return None
