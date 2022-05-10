@@ -1,0 +1,14 @@
+{
+  "package_list": [
+    "postgresql-12.7-1.module+el8.4.0+11288+c193d6d7.x86_64"
+  ],
+  "repository_list": [
+    "rhel-8-for-x86_64-appstream-rpms"
+  ],
+  "modules_list": [
+    {
+      "module_name": "postgresql",
+      "module_stream": "12"
+    }
+  ]
+}
