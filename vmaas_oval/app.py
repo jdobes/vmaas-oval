@@ -31,13 +31,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run evaluator.",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-d", "--database", default="database.sqlite", help="sqlite DB file path")
-    parser.add_argument("-s", "--single-file", help="evaluate only single system profile and finish")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
     args = parser.parse_args()
 
-    if not args.single_file:  # Webserver mode
-        init_logging(verbose=args.verbose)
-        LOGGER.info("Sqlite DB file: %s", args.database)
-        with SqliteConnection(args.database) as con:
-            VulnerabilitiesHandler.evaluator = VulnerabilitiesEvaluator(Cache(con))
-            web.run_app(app, port=8000)
+    init_logging(verbose=args.verbose)
+    LOGGER.info("Sqlite DB file: %s", args.database)
+    with SqliteConnection(args.database) as con:
+        VulnerabilitiesHandler.evaluator = VulnerabilitiesEvaluator(Cache(con))
+        web.run_app(app, port=8000)
