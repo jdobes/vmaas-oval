@@ -1,0 +1,8 @@
+{
+  "package_list": [
+    "java-1.8.0-ibm-1:1.8.0.7.0-1jpp.1.el7.x86_64"
+  ],
+  "repository_list": [
+    "rhel-7-server-rpms"
+  ]
+}

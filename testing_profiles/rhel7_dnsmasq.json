@@ -1,0 +1,8 @@
+{
+  "package_list": [
+    "dnsmasq-2.76-1.el7.x86_64.rpm"
+  ],
+  "repository_list": [
+    "rhel-7-server-rpms"
+  ]
+}
